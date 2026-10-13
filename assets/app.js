@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  const SERVER=!!window.BDA_SERVER;
   const M=window.BDA, KEY='bda.crm.prototype.v2', ACTOR='bda.crm.actor.v2';
   const $=s=>document.querySelector(s);
   const e=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -31,17 +32,16 @@
   const kv=(label,value)=>div('',div('field-label',e(label))+div('field-value',value));
   const names={dashboard:'Dashboard',crm:'CRM',calendar:'Календарь',cases:'Дела',payments:'Оплаты',employees:'Сотрудники',analytics:'Аналитика'};
   const rolePages={ceo:Object.keys(names),sales:['dashboard','crm','calendar'],coordinator:['dashboard','crm','calendar','cases','payments'],lawyer:['dashboard','calendar','cases']};
-  let storageOK=true,db=M.seed(),actorId='u1';
-  try{
+  let storageOK=true,db=M.seed(),actorId=SERVER?'':'u1',revision=0,busy=false,loginError='';
+  if(SERVER)for(const key of Object.keys(db))if(Array.isArray(db[key]))db[key]=[];
+  if(!SERVER)try{
     const saved=localStorage.getItem(KEY);
     if(saved){const parsed=JSON.parse(saved);if(parsed.version!==2||!['users','leads','clients','cases','tasks','invoices','receipts','documents','comments','activity'].every(k=>Array.isArray(parsed[k])))throw new Error('invalid');db=parsed;}
     const a=localStorage.getItem(ACTOR);if(a!==null)actorId=a;
     if(actorId&&!db.users.some(u=>u.id===actorId))actorId='u1';
   }catch{storageOK=false;}
   const calendarMigrationNeeded=!Array.isArray(db.events)||db.leads.some(l=>!l.pricing);
-  M.initWorkflow(db);
-  M.calendar.init(db);
-  if(calendarMigrationNeeded)persist();
+  if(!SERVER){M.initWorkflow(db);M.calendar.init(db);if(calendarMigrationNeeded)persist();}
   const cal={view:'month',date:M.calendar.today(),selected:M.calendar.today(),kind:'',owner:'',scope:'all',showDone:false};
   const ui={page:'dashboard',tab:'pipeline',view:'board',search:'',source:'',stage:'',caseStage:'',paymentStatus:'',detail:null,detailTab:'overview'};
   let timer;
@@ -50,11 +50,13 @@
   const visibleLeads=()=>M.leadList(db,actor());
   const taskList=()=>db.tasks.filter(t=>visibleCases().some(c=>c.id===t.caseId)&&(actor().role!=='lawyer'||t.assigneeId===actorId));
   function persist(){
+    if(SERVER)return true;
     if(!storageOK)return false;
     try{localStorage.setItem(KEY,JSON.stringify(db));return true;}catch{storageOK=false;return false;}
   }
   function toast(message){clearTimeout(timer);$('#toast').textContent=message;$('#toast').classList.add('show');timer=setTimeout(()=>$('#toast').classList.remove('show'),3200);}
   function changeActor(id){
+    if(SERVER)return;
     cal.owner='';cal.kind='';cal.scope='all';
     actorId=id;try{localStorage.setItem(ACTOR,id);}catch{storageOK=false;}
     closeDetails();$('#modal').close();Object.assign(ui,{page:'dashboard',tab:'pipeline',search:'',source:'',stage:'',caseStage:'',paymentStatus:''});render();
@@ -68,6 +70,8 @@
     return div('page-head',div('',div('eyebrow',e(new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long'}).format(new Date())))+H('h1',{},e(title))+H('p',{class:'page-sub'},e(sub)))+div('head-buttons',actions));
   }
   function login(){
+    if(SERVER)return div('login',div('login-aside',brand()+H('h1',{},'Каждое дело.<br>Под контролем.')+H('p',{},'Рабочее пространство BDA Lawyer'))+div('login-form',div('login-box',H('h2',{},'Вход сотрудника')+H('form',{'data-form':'server-login'},field('Email',input('email','',{type:'email',required:true,autocomplete:'username'}),true)+field('Пароль',input('password','',{type:'password',required:true,autocomplete:'current-password'}),true)+div('notice',e(loginError||'Войдите с учётной записью, созданной администратором.'))+formEnd('Войти')))));
+
     return div('login',div('login-aside',brand()+H('h1',{},'Каждое дело.<br>Под контролем.')+H('p',{},'Единое пространство BDA Lawyer<br>для продаж, юридической работы и команды.'))+div('login-form',div('login-box',div('eyebrow','ДЕМОНСТРАЦИОННЫЙ ДОСТУП')+H('h2',{},'Войти в пространство')+H('p',{},'Выберите роль, чтобы пройти её рабочий сценарий. Все записи вымышлены.')+db.users.filter(u=>u.id!=='u5').map(u=>btn(avatar(u.name)+div('',H('b',{},e(u.name))+H('small',{},M.ROLES[u.role]))+icon('arrow'),'login',{class:'demo-account','data-id':u.id})).join('')+H('p',{class:'login-note'},'Это демонстрация входа. Настоящие пароли и проверка доступа появятся в серверной версии.'))));
   }
   function brand(){return div('brand',div('brand-symbol','B')+div('',H('b',{},'BDA')+H('small',{},'LAWYER · WORKSPACE')));}
@@ -77,10 +81,10 @@
     if(!rolePages[u.role].includes(ui.page))ui.page='dashboard';
     const icons={dashboard:'overview',crm:'crm',calendar:'calendar',cases:'cases',payments:'payments',employees:'employees',analytics:'analytics'};
     const nav=rolePages[u.role].map(p=>btn(icon(icons[p])+e(names[p])+(p==='crm'&&visibleLeads().filter(l=>l.stage==='Новые лиды').length?H('span',{class:'nav-count'},visibleLeads().filter(l=>l.stage==='Новые лиды').length):''),'nav',{class:ui.page===p?'active':'','data-page':p})).join('');
-    const side=H('aside',{class:'sidebar'},brand()+div('nav-label','РАБОЧЕЕ ПРОСТРАНСТВО')+H('nav',{class:'nav','aria-label':'Разделы CRM'},nav)+div('sidebar-note',H('b',{},'Всё начинается с доверия.')+'Клиенты, дела и команда<br>в одном рабочем пространстве.')+div('profile',avatar(u.name,'gold')+div('',H('b',{},e(u.name))+H('small',{},M.ROLES[u.role]))+btn(icon('logout'),'logout',{class:'icon-btn logout','aria-label':'Выйти из демонстрации'})));
-    const top=H('header',{class:'topbar'},div('breadcrumb','BDA Lawyer <span>/</span> <b>'+names[ui.page]+'</b>')+div('top-actions',H('span',{class:'demo-pill'},'Демонстрационный прототип')+div('role-picker',H('label',{for:'role-select'},'Просмотр от лица')+select('actor',db.users.map(x=>({value:x.id,label:M.ROLES[x.role]+(x.role==='lawyer'?' · '+x.name.split(' ')[0]:'')})),u.id,{id:'role-select','aria-label':'Демонстрационная роль'}))+btn(icon('bell'),'notifications',{class:'icon-btn','aria-label':'Задачи и уведомления'})+avatar(u.name)));
+    const side=H('aside',{class:'sidebar'},brand()+div('nav-label','РАБОЧЕЕ ПРОСТРАНСТВО')+H('nav',{class:'nav','aria-label':'Разделы CRM'},nav)+div('sidebar-note',H('b',{},'Всё начинается с доверия.')+'Клиенты, дела и команда<br>в одном рабочем пространстве.')+div('profile',avatar(u.name,'gold')+div('',H('b',{},e(u.name))+H('small',{},M.ROLES[u.role]))+btn(icon('logout'),'logout',{class:'icon-btn logout','aria-label':SERVER?'Выйти':'Выйти из демонстрации'})));
+    const top=H('header',{class:'topbar'},div('breadcrumb','BDA Lawyer <span>/</span> <b>'+names[ui.page]+'</b>')+div('top-actions',H('span',{class:'demo-pill'},SERVER?'Общая база':'Демонстрационный прототип')+(SERVER?btn('Обновить данные','refresh',{class:'btn small'}):div('role-picker',H('label',{for:'role-select'},'Просмотр от лица')+select('actor',db.users.map(x=>({value:x.id,label:M.ROLES[x.role]+(x.role==='lawyer'?' · '+x.name.split(' ')[0]:'')})),u.id,{id:'role-select','aria-label':'Демонстрационная роль'})))+btn(icon('bell'),'notifications',{class:'icon-btn','aria-label':'Задачи и уведомления'})+avatar(u.name)));
     const pages={dashboard:dashboard,crm:crm,calendar:calendarPage,cases:casesPage,payments:paymentsPage,employees:employeesPage,analytics:analytics};
-    const footer=div('page-footer',H('span',{},'BDA Lawyer · Внутренняя система компании')+H('span',{},'Демо-данные хранятся в этом браузере · ')+H('a',{href:'docs/PRODUCT_PLAN.md',target:'_blank',rel:'noopener'},'План разработки ↗'));
+    const footer=div('page-footer',H('span',{},'BDA Lawyer · Внутренняя система компании')+H('span',{},SERVER?'Данные сохраняются на сервере': 'Демо-данные хранятся в этом браузере'));
     $('#app').innerHTML=div('shell',side+H('main',{class:'workspace'},top+(!storageOK?div('storage-warning','Хранилище недоступно или содержит несовместимые данные. Изменения доступны только до перезагрузки. Используйте локальный сервер из README.'): '')+div('content',pages[ui.page]()+footer)));
     if(ui.page==='calendar'&&cal.view!=='month'){const scroll=$('.cal-scroll');if(scroll)scroll.scrollTop=8*48;}
     if(focus){const el=document.getElementById(focus);if(el){el.focus();if(typeof position==='number'&&el.setSelectionRange)el.setSelectionRange(position,position);}}
@@ -198,7 +202,7 @@
     ])+searchBar(select('payment-status',[{value:'',label:'Все статусы'},'Ожидается','Частично','Оплачено','Просрочено'],ui.paymentStatus,{id:'payment-filter','aria-label':'Статус платежа'}))+div('panel',invoicesTable(rows))+H('p',{class:'caption'},'В прототипе фиксируются поступления в целых тенге. Банковская операция не выполняется; подтверждающие документы появятся в серверной версии.');
   }
   function employeesPage(){
-    return pageHead('Сотрудники','Команда BDA Lawyer и текущая загрузка.')+div('notice','Демонстрационные сотрудники. Роль определяет доступ к разделам и записям; реальные приглашения появятся после подключения авторизации.')+div('employees',db.users.map(u=>{const cs=db.cases.filter(c=>(c.lawyerId===u.id||c.coordinatorId===u.id)&&c.stage!=='Завершено'),ts=db.tasks.filter(t=>t.assigneeId===u.id&&!t.done);return div('employee',avatar(u.name)+H('h2',{},e(u.name))+badge(M.ROLES[u.role],'s'+({ceo:2,sales:1,coordinator:4,lawyer:3}[u.role]))+H('p',{},e(u.specialty))+div('employee-meta',H('span',{},H('b',{},cs.length)+'активных дел')+H('span',{},H('b',{},ts.length)+'открытых задач')));}).join(''));
+    return pageHead('Сотрудники','Команда BDA Lawyer и текущая загрузка.')+div('notice',SERVER?'Учётные записи создаёт администратор. Роль определяет доступ к записям и действиям.':'Демонстрационные сотрудники. Роль определяет доступ к разделам и записям; реальные приглашения появятся после подключения авторизации.')+div('employees',db.users.map(u=>{const cs=db.cases.filter(c=>(c.lawyerId===u.id||c.coordinatorId===u.id)&&c.stage!=='Завершено'),ts=db.tasks.filter(t=>t.assigneeId===u.id&&!t.done);return div('employee',avatar(u.name)+H('h2',{},e(u.name))+badge(M.ROLES[u.role],'s'+({ceo:2,sales:1,coordinator:4,lawyer:3}[u.role]))+H('p',{},e(u.specialty))+div('employee-meta',H('span',{},H('b',{},cs.length)+'активных дел')+H('span',{},H('b',{},ts.length)+'открытых задач')));}).join(''));
   }
   function analytics(){
     const ls=db.leads,won=ls.filter(l=>l.stage==='Успешно').length,refused=ls.filter(l=>l.stage==='Отказано');
@@ -473,15 +477,64 @@
     const i=M.invoiceList(db,actor()).find(x=>x.id===invoiceId);if(!i)throw new Error('Нет доступа к оплате');
     showModal('Учесть поступление',div('notice','Остаток по начислению: '+H('b',{},money(M.balance(db,i)))+'. Можно внести часть суммы. Это запись в CRM, а не банковский перевод.')+H('form',{'data-form':'receipt','data-id':i.id},div('form-grid',field('Полученная сумма, ₸',input('amount',M.balance(db,i),{type:'number',required:true,min:1,max:M.balance(db,i),step:1}))+field('Дата поступления',input('date',M.date(),{type:'date',required:true,max:M.date()})))+formEnd('Зафиксировать поступление')));
   }
+  async function api(path,body){
+    const response=await fetch('/api/'+path,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    const value=await response.json();
+    if(!response.ok){const err=new Error(value.error||'Не удалось выполнить запрос');err.status=response.status;throw err;}return value;
+  }
+  function applySnapshot(value){db=value.db;actorId=value.actorId;revision=value.revision;}
+  async function refresh(){
+    try{applySnapshot(await api('state'));loginError='';render();if(ui.detail)renderDetail();}
+    catch(err){if(err.status===401){actorId='';closeDetails();$('#modal').close();loginError='';render();}else if(!actorId){loginError=err.message;render();}else toast(err.message);}
+  }
+  async function serverAction(action,id,data={}){
+    if(busy)throw new Error('Дождитесь завершения предыдущего действия');
+    busy=true;
+    try{
+      const value=await api('command',{action,id,data,revision,requestId:crypto.randomUUID()});
+      applySnapshot(value);return value.result;
+    }catch(err){
+      if(err.status===401){actorId='';closeDetails();$('#modal').close();render();}
+      // Preserve the form on conflict so the user can copy changes before refreshing.
+      throw err;
+    }finally{busy=false;}
+  }
+  async function submitServer(form,data,id){
+    if(busy)return;
+    const buttons=[...form.querySelectorAll('button[type="submit"]')];buttons.forEach(b=>b.disabled=true);
+    try{
+      if(form.dataset.form==='server-login'){
+        busy=true;await api('login',data);busy=false;await refresh();return;
+      }
+      const result=await serverAction(form.dataset.form,id,data);
+      $('#modal').close();
+      if(form.dataset.form==='new-lead'){navigate('crm');ui.detail={type:'lead',id:result.id};}
+      if(form.dataset.form==='accept-lead'){navigate('cases');ui.detail={type:'case',id:result.id};ui.detailTab='overview';}
+      if(form.dataset.form==='calendar-event')cal.date=cal.selected=data.date;
+      commit(form.dataset.form==='decide-price'?(data.decision==='approve'?'Сумма утверждена':'Стоимость возвращена с комментарием'):'Сохранено на сервере');
+      if(ui.detail&&!$('#detail').open)$('#detail').showModal();
+    }catch(err){const box=form.querySelector('.form-error');if(box){box.textContent=err.message;if(err.status===409)box.insertAdjacentHTML('beforeend',btn('Обновить данные','refresh',{class:'btn small'}));}else toast(err.message);}
+    finally{busy=false;buttons.forEach(b=>b.disabled=false);}
+  }
   function commit(message){
     const saved=persist();render();
     if(ui.detail)renderDetail();
     toast(saved?message:message+' · Только до перезагрузки: сохранение недоступно.');
   }
-  document.addEventListener('click',event=>{
+  document.addEventListener('click',async event=>{
     const b=event.target.closest('[data-action]');if(!b||b.disabled)return;
     const a=b.dataset.action,id=b.dataset.id;
     try {
+      if(SERVER){
+        if(a==='refresh'){if(!busy)await refresh();return;}
+        if(a==='logout'){if(busy)return;await api('logout',{});actorId='';closeDetails();$('#modal').close();render();return;}
+        if(a==='login')return;
+        if(['toggle-task','calendar-task','document','event-status'].includes(a)){
+          if(busy)return;
+          await serverAction(a,id,{status:b.dataset.status});commit('Сохранено на сервере');
+          if(a==='calendar-task'||a==='event-status')calendarDetail(id,a==='calendar-task'?'task':'event');return;
+        }
+      }
       if(a==='login'){changeActor(id);return;}
       if(a==='logout'){changeActor('');return;}
       if(a==='close-detail'){closeDetails();return;}
@@ -536,6 +589,7 @@
     const form=event.target;if(!form.dataset.form)return;event.preventDefault();
     const data=Object.fromEntries(new FormData(form)),id=form.dataset.id;
     if(form.dataset.form==='decide-price')data.decision=event.submitter?.value||'';
+    if(SERVER){submitServer(form,data,id);return;}
     try {
       if(!actorId)throw new Error('Сначала выберите сотрудника');
       const u=actor();let result,message='Изменения сохранены';
@@ -576,5 +630,5 @@
   });
   $('#detail').addEventListener('cancel',()=>{ui.detail=null;});
   for(const id of ['detail','modal'])$('#'+id).addEventListener('click',event=>{if(event.target!==event.currentTarget)return;const r=event.currentTarget.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom){event.currentTarget.close();if(id==='detail')ui.detail=null;}});
-  render();
+  if(SERVER)refresh();else render();
 })();
