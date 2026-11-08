@@ -7,9 +7,11 @@ const digest=value=>createHash('sha256').update(value).digest();
 
 function configuration(env){
   const forms=(env.TILDA_FORM_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
-  if(!env.TILDA_WEBHOOK_SECRET||env.TILDA_WEBHOOK_SECRET.length<32||!env.TILDA_OWNER_ID||!forms.length)throw fail(503,'Integration not configured');
+  if(!env.TILDA_WEBHOOK_SECRET||env.TILDA_WEBHOOK_SECRET.length<32)throw fail(503,'Integration secret missing or too short');
+  if(!env.TILDA_OWNER_ID||!forms.length)throw fail(503,'Integration owner or forms missing');
   const service=env.TILDA_DEFAULT_SERVICE||'Юридическая консультация';
-  if(!M.SERVICES.includes(service)||forms.some(x=>!/^form\d+$/.test(x)))throw fail(503,'Integration not configured');
+  if(!M.SERVICES.includes(service))throw fail(503,'Integration default service invalid');
+  if(forms.some(x=>!/^form\d+$/.test(x)))throw fail(503,'Integration form IDs invalid');
   return {secret:env.TILDA_WEBHOOK_SECRET,ownerId:env.TILDA_OWNER_ID,forms,service};
 }
 
