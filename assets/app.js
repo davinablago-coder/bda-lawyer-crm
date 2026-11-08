@@ -18,7 +18,7 @@
   const badge=(text,style)=>H('span',{class:'pill '+(style||'s'+Math.max(0,M.STAGES.indexOf(text)))},e(text));
   const btn=(label,action,attrs={})=>H('button',{type:'button',class:'btn',...attrs,'data-action':action},label);
   const link=(label,action,attrs={})=>btn(label,action,{class:'text-btn',...attrs});
-  const emp=id=>db.users.find(u=>u.id===id)?.name||'Не назначен';
+  const emp=id=>id==='integration:tilda'?'Тильда':db.users.find(u=>u.id===id)?.name||'Не назначен';
   const client=c=>db.clients.find(cl=>cl.id===c.clientId);
   const panel=(title,sub,body,action='')=>div('panel',div('panel-head',div('',H('h2',{},e(title))+(sub?H('p',{},e(sub)):''))+action)+body);
   const empty=text=>div('empty',e(text));
