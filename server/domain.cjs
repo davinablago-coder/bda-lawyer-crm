@@ -7,7 +7,7 @@ function scoped(db,u){
   const events=db.events.filter(ev=>M.calendar.canView(db,u,ev));
   const eventIds=new Set(events.map(ev=>ev.id)),invoiceIds=new Set(invoices.map(i=>i.id));
   const safeCases=caseLinks.map(c=>{if(u.role!=='lawyer')return c;const {approvedFee,...safe}=c;return safe;});
-  return {version:db.version,users:db.users.map(({id,name,role,specialty})=>({id,name,role,specialty})),leads,clients,cases:safeCases,
+  return {version:db.version,users:db.users.map(({id,name,role,specialty,active})=>({id,name,role,specialty,active})),leads,clients,cases:safeCases,
     tasks:db.tasks.filter(t=>caseIds.has(t.caseId)),invoices,receipts:db.receipts.filter(r=>invoiceIds.has(r.invoiceId)),
     documents:db.documents.filter(d=>caseIds.has(d.caseId)),comments:db.comments.filter(c=>caseIds.has(c.caseId)),events,
     activity:db.activity.filter(a=>u.role!=='lawyer'||!(/^(Учтено поступление|Запланирован платёж)/.test(a.message))).filter(a=>a.type==='case'?caseIds.has(a.entityId):a.type==='event'?eventIds.has(a.entityId):leadIds.has(a.entityId))};

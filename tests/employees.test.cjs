@@ -1,0 +1,10 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');
+const {validate,guardChange,manage}=require('../server/employees.cjs');
+const {verifyPassword}=require('../server/password.cjs');
+const M=require('../assets/calendar-model.js');
+const {clean}=require('../server/cleanup-demo.cjs');
+test('логин без почты, нормализация и проверка роли',()=>{assert.equal(validate({name:'Юрист',login:'Lawyer.1',role:'lawyer',specialty:'',active:true}).login,'lawyer.1');assert.throws(()=>validate({name:'Юрист',login:'lawyer',role:'admin',active:true}));});
+test('собственное отключение и смена роли с открытой работой запрещены',()=>{const db=M.seed();assert.throws(()=>guardChange(db,'u1',db.users[0],{active:false,role:'ceo'}));assert.throws(()=>guardChange(db,'u1',db.users[3],{active:false,role:'lawyer'}));});
+test('управление доступами закрыто для остальных ролей',async()=>{for(const role of ['sales','coordinator','lawyer'])await assert.rejects(manage({},M.seed(),{role},{},{action:'create'}),{status:403});});
+test('создание выдаёт случайный пароль, сохраняет только хеш и отзывает сессии',async()=>{const calls=[];const c={query:async(sql,args)=>{calls.push([sql,args]);return {rows:[]};}};const db=M.seed();const result=await manage(c,db,db.users[0],{id:'actor'},{action:'create',data:{name:'Новый юрист',login:'lawyer.new',role:'lawyer',active:true}});const insert=calls.find(([s])=>s.startsWith('INSERT INTO accounts'));assert.ok(await verifyPassword(result.temporaryPassword,insert[1][3]));assert.notEqual(insert[1][3],result.temporaryPassword);assert.ok(calls.some(([s])=>s.startsWith('DELETE FROM sessions')));assert.ok(!JSON.stringify(db).includes(result.temporaryPassword));});
+test('очистка заглушек сохраняет новую заявку, идемпотентна',()=>{const db=M.seed();db.leads.push({id:'real',name:'Синтетическая новая заявка',source:'Сайт'});clean(db);assert.deepEqual(db.leads.map(l=>l.id),['real']);assert.equal(db.cases.length,0);assert.equal(db.users.length,5);assert.ok(Object.values(clean(db)).every(n=>n===0));});

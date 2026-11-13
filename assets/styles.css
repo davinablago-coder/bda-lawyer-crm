@@ -42,6 +42,7 @@ small{font-size:11px}
 .breadcrumb span{margin:0 9px;color:#bbc5be}
 .breadcrumb b{font-weight:500;color:#44574a}
 .top-actions{display:flex;align-items:center;gap:15px;margin-left:auto}
+.topbar-logout{display:none}
 .demo-pill{font-size:10px;color:#8b7648;padding:6px 9px;border:1px solid #e9dfc5;border-radius:5px;background:#fcfaf5;white-space:nowrap}
 .role-picker{display:flex;align-items:center;gap:8px}
 .role-picker label{font-size:10px;color:#8a948e}
@@ -256,8 +257,9 @@ dialog::backdrop{background:#172d2359;backdrop-filter:blur(2px)}
 .nav button{padding:9px 11px;white-space:nowrap;font-size:10px;gap:6px}
 .nav svg{width:15px;height:15px}
 .workspace{width:100%;margin-left:0}
-.topbar{padding:12px 16px;min-height:55px;gap:5px}
+.topbar{padding:12px 16px;min-height:55px;gap:5px;flex-wrap:wrap}
 .top-actions{gap:5px}
+.topbar-logout{display:inline-flex}
 .breadcrumb{font-size:10px}
 .breadcrumb>span:first-child{margin:0 4px}
 .role-picker label{display:none}

@@ -60,7 +60,7 @@
     assert(validDate(input.date),'Укажите корректную дату');
     const start=minutes(input.start),end=minutes(input.end);
     assert(Number.isFinite(start)&&Number.isFinite(end)&&end>start,'Время окончания должно быть позже начала в тот же день');
-    assert(db.users.some(x=>x.id===input.ownerId),'Выберите ответственного');
+    assert(db.users.some(x=>x.id===input.ownerId&&x.active!==false),'Выберите ответственного');
     assert(['','case','lead'].includes(input.linkType),'Неизвестный тип привязки');
     if(input.linkType==='case'){
       const c=db.cases.find(c=>c.id===input.linkId);

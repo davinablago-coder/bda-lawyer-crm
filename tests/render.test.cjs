@@ -4,11 +4,12 @@ const assert=require('node:assert/strict');
 const vm=require('node:vm');
 const fs=require('node:fs');
 const M=require('../assets/calendar-model.js');
-function boot(db=M.seed(),actor='u1'){
+function boot(db=M.seed(),actor='u1',serverState=null){
   const elements=new Map(),listeners={};
   const element=key=>{if(!elements.has(key))elements.set(key,{innerHTML:'',textContent:'',open:false,close(){this.open=false},showModal(){this.open=true},addEventListener(){},classList:{add(){},remove(){}}});return elements.get(key);};
   const saved=new Map([['bda.crm.prototype.v2',JSON.stringify(db)],['bda.crm.actor.v2',actor]]);
   const context={BDA:M,document:{activeElement:null,querySelector:element,getElementById:()=>null,addEventListener:(name,fn)=>listeners[name]=fn},localStorage:{getItem:key=>saved.get(key)??null,setItem:(key,value)=>saved.set(key,value)},setTimeout:()=>0,clearTimeout(){},Intl,Date,console};
+  if(serverState){context.BDA_SERVER=true;context.fetch=async()=>({ok:true,json:async()=>serverState});}
   context.window=context;
   vm.runInNewContext(fs.readFileSync(require.resolve('../assets/app.js'),'utf8'),context);
   return {html:()=>element('#app').innerHTML,detail:()=>element('#detail').innerHTML,modal:()=>element('#modal').innerHTML,
@@ -55,6 +56,16 @@ test('logout displays explicitly simulated login and reentry works',()=>{
   app.click('login',{id:'u3'});assert.match(app.html(),/Здравствуйте, Мадина/);
 });
 
+test('compact header provides the same logout action for every role',()=>{
+  for(const role of ['u1','u2','u3','u4']){
+    const app=boot(M.seed(),role);
+    assert.match(app.html(),/class="icon-btn topbar-logout"/);
+    assert.match(app.html(),/aria-label="Выйти из демонстрации"/);
+    app.click('logout');
+    assert.match(app.html(),/демонстрация входа/);
+  }
+});
+
 test('calendar renders month, week, day, filters and event forms',()=>{
   const app=boot();app.click('nav',{page:'calendar'});
   assert.match(app.html(),/Общий календарь/);assert.match(app.html(),/cal-month/);
@@ -75,4 +86,16 @@ test('calendar is available to every role and hides inaccessible meetings',()=>{
   app.role('u4');app.click('nav',{page:'calendar'});
   assert.match(app.html(),/Предварительное заседание/);
   assert.doesNotMatch(app.html(),/Обсуждение документов с клиентом/);
+});
+
+test('server CEO can open employee creation with login instead of email',async()=>{
+  const db=M.seed();const app=boot(db,'u1',{db,actorId:'u1',revision:1});
+  await new Promise(resolve=>setImmediate(resolve));
+  await app.click('nav',{page:'employees'});
+  assert.match(app.html(),/Добавить сотрудника/);
+  await app.click('employee-new');assert.match(app.modal(),/name="login"/);assert.doesNotMatch(app.modal(),/type="email"/);
+});
+test('temporary-password session renders password change without CRM data',async()=>{
+  const app=boot(M.seed(),'u1',{passwordChangeRequired:true});await new Promise(resolve=>setImmediate(resolve));
+  assert.match(app.html(),/data-form="change-password"/);assert.doesNotMatch(app.html(),/data-page="crm"/);
 });

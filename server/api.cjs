@@ -1,6 +1,6 @@
 const {randomBytes,createHash}=require('node:crypto');
 const {database,transaction}=require('./database.cjs');
-const {verifyPassword}=require('./password.cjs');
+const {hashPassword,verifyPassword}=require('./password.cjs');
 const {M,scoped,command}=require('./domain.cjs');
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const cookieName=process.env.NODE_ENV==='production'?'__Host-bda_session':'bda_session';
@@ -17,19 +17,22 @@ async function readBody(req){
 }
 async function session(req,c=database()){
   const value=token(req);if(!/^[a-f0-9]{64}$/.test(value))throw fail('Войдите в систему',401);
-  const {rows}=await c.query('SELECT a.id,a.employee_id FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=$1 AND s.expires_at>now() AND a.active=true',[digest(value)]);
+  const {rows}=await c.query('SELECT a.id,a.employee_id,a.must_change_password FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=$1 AND s.expires_at>now() AND a.active=true',[digest(value)]);
   if(!rows[0])throw fail('Сессия истекла. Войдите заново',401);return rows[0];
 }
 async function snapshot(req){
   const account=await session(req);
+  if(account.must_change_password)return {passwordChangeRequired:true};
   const {rows}=await database().query('SELECT data,revision FROM crm_workspace WHERE id=1');
   if(!rows[0])throw fail('Сначала выполните миграцию базы',503);
   const u=M.user(rows[0].data,account.employee_id);
-  return {db:scoped(rows[0].data,u),actorId:u.id,revision:rows[0].revision};
+  const db=scoped(rows[0].data,u);
+  if(u.role==='ceo'){const accounts=await database().query('SELECT employee_id,email,active,must_change_password FROM accounts');db.users=db.users.map(user=>{const a=accounts.rows.find(a=>a.employee_id===user.id);return {...user,login:a?.email||'',active:a?.active??false,hasAccount:!!a,mustChangePassword:a?.must_change_password||false};});}
+  return {db,actorId:u.id,revision:rows[0].revision};
 }
 async function login(req,data){
   const email=typeof data.email==='string'?data.email.trim().toLowerCase():'';
-  if(!email||email.length>254||typeof data.password!=='string'||data.password.length>256)throw fail('Проверьте email и пароль',401);
+  if(!email||email.length>254||typeof data.password!=='string'||data.password.length>256)throw fail('Проверьте логин и пароль',401);
   // Persisted limits work across serverless instances. Hash identities instead of storing IPs.
   const ip=process.env.VERCEL?(req.headers.get('x-vercel-forwarded-for')||'unknown'):'local';
   for(const key of [digest('account:'+email),digest('ip:'+ip)]){
@@ -39,9 +42,12 @@ async function login(req,data){
   const {rows}=await database().query('SELECT * FROM accounts WHERE email=$1 AND active=true',[email]);
   const account=rows[0];
   const ok=await verifyPassword(data.password,account?.password_hash||'00000000000000000000000000000000:'+ '00'.repeat(64));
-  if(!account||!ok)throw fail('Неверный email или пароль',401);
+  if(!account||!ok)throw fail('Неверный логин или пароль',401);
   const value=randomBytes(32).toString('hex');
   await transaction(async c=>{
+    await c.query('SELECT id FROM crm_workspace WHERE id=1 FOR UPDATE');
+    const fresh=await c.query('SELECT password_hash,active FROM accounts WHERE id=$1',[account.id]);
+    if(!fresh.rows[0]?.active||fresh.rows[0].password_hash!==account.password_hash)throw fail('Доступ изменился. Войдите заново',401);
     if(token(req))await c.query('DELETE FROM sessions WHERE token_hash=$1',[digest(token(req))]);
     await c.query('DELETE FROM sessions WHERE expires_at<now()');
     await c.query("INSERT INTO sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '12 hours')",[digest(value),account.id]);
@@ -62,11 +68,37 @@ async function handle(req,parts){
     const input=await readBody(req);
     if(!input||typeof input!=='object'||Array.isArray(input))throw fail('Некорректный запрос');
     if(path==='login')return await login(req,input);
+    if(path==='password'){
+      await transaction(async c=>{
+        await c.query('SELECT id FROM crm_workspace WHERE id=1 FOR UPDATE');
+        const a=await session(req,c);
+        const {rows}=await c.query('SELECT password_hash FROM accounts WHERE id=$1 FOR UPDATE',[a.id]);
+        if(typeof input.currentPassword!=='string'||input.currentPassword.length>256||!await verifyPassword(input.currentPassword,rows[0].password_hash))throw fail('Неверный текущий пароль');
+        if(input.password===input.currentPassword)throw fail('Новый пароль должен отличаться');
+        const hash=await hashPassword(input.password).catch(e=>{throw fail(e.message);});
+        await c.query('UPDATE accounts SET password_hash=$1,must_change_password=false WHERE id=$2',[hash,a.id]);
+        await c.query('DELETE FROM sessions WHERE account_id=$1',[a.id]);
+        await c.query('INSERT INTO account_audit(actor_id,employee_id,action) VALUES($1,$2,$3)',[a.id,a.employee_id,'password-change']);
+      });
+      return reply({ok:true},200,{'Set-Cookie':cookie('',0)});
+    }
+    if(path==='employees'){
+      const result=await transaction(async c=>{
+        const {rows}=await c.query('SELECT data,revision FROM crm_workspace WHERE id=1 FOR UPDATE');
+        const a=await session(req,c);if(a.must_change_password)throw fail('Сначала смените временный пароль',403);
+        if(input.revision!==rows[0].revision)throw fail('Данные изменились. Обновите страницу.',409);
+        const db=rows[0].data,u=M.user(db,a.employee_id);
+        const result=await require('./employees.cjs').manage(c,db,u,a,input);
+        await c.query('UPDATE crm_workspace SET data=$1,revision=revision+1 WHERE id=1',[JSON.stringify(db)]);
+        return result;
+      });return reply(result);
+    }
     if(path!=='command')throw fail('Не найдено',404);
     if(!/^[a-f0-9-]{36}$/i.test(input.requestId||'')||!Number.isInteger(input.revision))throw fail('Некорректная версия или идентификатор запроса');
     const result=await transaction(async c=>{
-      const account=await session(req,c);
       const {rows}=await c.query('SELECT data,revision FROM crm_workspace WHERE id=1 FOR UPDATE');
+      const account=await session(req,c);
+      if(account.must_change_password)throw fail('Сначала смените временный пароль',403);
       if(!rows[0])throw fail('Сначала выполните миграцию',503);
       const db=rows[0].data,u=M.user(db,account.employee_id);
       const prior=await c.query('SELECT result FROM command_receipts WHERE account_id=$1 AND request_id=$2',[account.id,input.requestId]);

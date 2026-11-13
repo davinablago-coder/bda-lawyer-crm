@@ -97,7 +97,7 @@
   function createLead(db,u,input) {
     need(['ceo','sales'].includes(u.role),'Создание лидов недоступно этой роли'); validateLead(input);
     const ownerId=u.role==='sales'?u.id:input.ownerId;
-    need(db.users.some(x=>x.id===ownerId&&x.role==='sales'),'Выберите менеджера');
+    need(db.users.some(x=>x.id===ownerId&&x.role==='sales'&&x.active!==false),'Выберите менеджера');
     const l={id:id('l'),code:'L-'+(Math.max(100,...db.leads.map(x=>Number(x.code.split('-')[1])))+1),name:text(input.name),phone:text(input.phone),service:input.service,source:input.source,note:text(input.note),amount:0,coordinatorId:null,pricing:{status:'sales',revision:0,history:[]},nextStep:text(input.nextStep),nextDate:input.nextDate,ownerId,stage:STAGES[0],createdAt:date(),caseId:null,reason:''};
     db.leads.unshift(l);log(db,u,'lead',l.id,'Создан лид из источника «'+l.source+'».');return l;
   }
@@ -126,7 +126,7 @@
     const l=db.leads.find(x=>x.id===leadId);
     need(l&&u.role==='sales'&&l.ownerId===u.id&&editLead(u,l)&&l.stage!=='Отказано','Передать может менеджер своего активного лида');
     need(text(input.qualification),'Опишите результат квалификации');
-    need(db.users.some(x=>x.id===input.coordinatorId&&x.role==='coordinator'),'Выберите координатора');
+    need(db.users.some(x=>x.id===input.coordinatorId&&x.role==='coordinator'&&x.active!==false),'Выберите координатора');
     l.coordinatorId=input.coordinatorId;l.qualification={note:text(input.qualification),by:u.id,at:new Date().toISOString()};
     l.stage='В работе';l.pricing.status='pricing';l.nextStep='Координатор определяет стоимость';
     log(db,u,'lead',l.id,'Лид квалифицирован и передан координатору '+user(db,l.coordinatorId).name+'. '+l.qualification.note);
@@ -166,9 +166,9 @@
     need(l.pricing.status==='approved'&&approval?.decision==='approve'&&approval.revision===l.pricing.revision&&approval.amount===l.amount,'Сначала требуется одобрение CEO текущей суммы');
     need(Number(input.revision)===l.pricing.revision,'Версия стоимости изменилась. Откройте карточку заново');
     need(validDate(input.due),'Укажите срок дела');
-    need(db.users.some(x=>x.id===input.lawyerId&&x.role==='lawyer'),'Выберите юриста');
+    need(db.users.some(x=>x.id===input.lawyerId&&x.role==='lawyer'&&x.active!==false),'Выберите юриста');
     const coordinatorId=u.id;
-    need(db.users.some(x=>x.id===coordinatorId&&x.role==='coordinator'),'Выберите координатора');
+    need(db.users.some(x=>x.id===coordinatorId&&x.role==='coordinator'&&x.active!==false),'Выберите координатора');
     let cl=db.clients.find(x=>phoneKey(x.phone)===phoneKey(l.phone));
     if(!cl){cl={id:id('cl'),name:l.name,phone:l.phone};db.clients.push(cl);}
     const c={id:id('c'),code:'D-'+String(Math.max(26,...db.cases.map(x=>Number(x.code.split('-')[1])))+1).padStart(3,'0'),clientId:cl.id,leadId:l.id,approvedFee:{...approval},title:l.service+' — '+l.name,service:l.service,note:l.note,coordinatorId,lawyerId:input.lawyerId,stage:'Принято',due:input.due,createdAt:date(),result:''};
@@ -181,7 +181,7 @@
     if(input.stage==='Завершено') {need(manageCase(db,u,c),'Закрытие доступно координатору');need(text(input.result),'Опишите результат дела');}
     if(manageCase(db,u,c)) {
       need(validDate(input.due),'Укажите срок');
-      need(db.users.some(x=>x.id===input.lawyerId&&x.role==='lawyer'),'Выберите юриста');
+      need(db.users.some(x=>x.id===input.lawyerId&&x.role==='lawyer'&&x.active!==false),'Выберите юриста');
       const before=c.lawyerId;
       if(before!==input.lawyerId)db.tasks.filter(t=>t.caseId===c.id&&t.assigneeId===before&&!t.done).forEach(t=>{t.assigneeId=input.lawyerId;});
       if(before!==input.lawyerId)(db.events||[]).filter(ev=>ev.linkType==='case'&&ev.linkId===c.id&&ev.ownerId===before&&ev.status==='planned').forEach(ev=>{ev.ownerId=input.lawyerId;});
@@ -192,7 +192,7 @@
   }
   function addTask(db,u,caseId,input) {
     const c=db.cases.find(x=>x.id===caseId);need(c&&manageCase(db,u,c),'Создание задач доступно координатору');need(text(input.title)&&validDate(input.due),'Заполните задачу и срок');
-    need([c.lawyerId,c.coordinatorId].includes(input.assigneeId),'Выберите участника дела');
+    need(db.users.some(x=>x.id===input.assigneeId&&x.active!==false)&&[c.lawyerId,c.coordinatorId].includes(input.assigneeId),'Выберите участника дела');
     db.tasks.push({id:id('t'),caseId,title:text(input.title),due:input.due,assigneeId:input.assigneeId,done:false});log(db,u,'case',caseId,'Добавлена задача: '+text(input.title)+'.');
   }
   function toggleTask(db,u,taskId) {

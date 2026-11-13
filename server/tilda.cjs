@@ -77,7 +77,7 @@ async function save(delivery,config,runTransaction=transaction){
     const prior=await c.query('SELECT lead_id FROM tilda_deliveries WHERE submission_id=$1',[delivery.submissionId]);
     if(prior.rows[0])return;
     const db=rows[0].data;
-    const owner=db.users.find(u=>u.id===config.ownerId&&u.role==='sales');
+    const owner=db.users.find(u=>u.id===config.ownerId&&u.role==='sales'&&u.active!==false);
     const account=await c.query('SELECT id FROM accounts WHERE employee_id=$1 AND active=true',[config.ownerId]);
     if(!owner||!account.rows[0])throw fail(503,'Lead owner unavailable');
     // Only this fixed server-side action is permitted; no payload role/amount/stage is used.

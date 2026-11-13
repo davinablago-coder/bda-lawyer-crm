@@ -32,7 +32,7 @@
   const kv=(label,value)=>div('',div('field-label',e(label))+div('field-value',value));
   const names={dashboard:'Dashboard',crm:'CRM',calendar:'Календарь',cases:'Дела',payments:'Оплаты',employees:'Сотрудники',analytics:'Аналитика'};
   const rolePages={ceo:Object.keys(names),sales:['dashboard','crm','calendar'],coordinator:['dashboard','crm','calendar','cases','payments'],lawyer:['dashboard','calendar','cases']};
-  let storageOK=true,db=M.seed(),actorId=SERVER?'':'u1',revision=0,busy=false,loginError='';
+  let storageOK=true,db=M.seed(),actorId=SERVER?'':'u1',revision=0,busy=false,loginError='',passwordChangeRequired=false;
   if(SERVER)for(const key of Object.keys(db))if(Array.isArray(db[key]))db[key]=[];
   if(!SERVER)try{
     const saved=localStorage.getItem(KEY);
@@ -70,19 +70,20 @@
     return div('page-head',div('',div('eyebrow',e(new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long'}).format(new Date())))+H('h1',{},e(title))+H('p',{class:'page-sub'},e(sub)))+div('head-buttons',actions));
   }
   function login(){
-    if(SERVER)return div('login',div('login-aside',brand()+H('h1',{},'Каждое дело.<br>Под контролем.')+H('p',{},'Рабочее пространство BDA Lawyer'))+div('login-form',div('login-box',H('h2',{},'Вход сотрудника')+H('form',{'data-form':'server-login'},field('Email',input('email','',{type:'email',required:true,autocomplete:'username'}),true)+field('Пароль',input('password','',{type:'password',required:true,autocomplete:'current-password'}),true)+div('notice',e(loginError||'Войдите с учётной записью, созданной администратором.'))+formEnd('Войти')))));
+    if(SERVER)return div('login',div('login-aside',brand()+H('h1',{},'Каждое дело.<br>Под контролем.')+H('p',{},'Рабочее пространство BDA Lawyer'))+div('login-form',div('login-box',H('h2',{},'Вход сотрудника')+H('form',{'data-form':'server-login'},field('Логин',input('email','',{type:'text',required:true,autocomplete:'username'}),true)+field('Пароль',input('password','',{type:'password',required:true,autocomplete:'current-password'}),true)+div('notice',e(loginError||'Войдите с учётной записью, созданной администратором.'))+formEnd('Войти')))));
 
     return div('login',div('login-aside',brand()+H('h1',{},'Каждое дело.<br>Под контролем.')+H('p',{},'Единое пространство BDA Lawyer<br>для продаж, юридической работы и команды.'))+div('login-form',div('login-box',div('eyebrow','ДЕМОНСТРАЦИОННЫЙ ДОСТУП')+H('h2',{},'Войти в пространство')+H('p',{},'Выберите роль, чтобы пройти её рабочий сценарий. Все записи вымышлены.')+db.users.filter(u=>u.id!=='u5').map(u=>btn(avatar(u.name)+div('',H('b',{},e(u.name))+H('small',{},M.ROLES[u.role]))+icon('arrow'),'login',{class:'demo-account','data-id':u.id})).join('')+H('p',{class:'login-note'},'Это демонстрация входа. Настоящие пароли и проверка доступа появятся в серверной версии.'))));
   }
   function brand(){return div('brand',div('brand-symbol','B')+div('',H('b',{},'BDA')+H('small',{},'LAWYER · WORKSPACE')));}
   function render(){
+    if(passwordChangeRequired){$('#app').innerHTML=div('login-form',div('login-box',H('h2',{},'Задайте собственный пароль')+H('form',{'data-form':'change-password'},field('Временный / текущий пароль',input('currentPassword','',{type:'password',required:true,autocomplete:'current-password'}))+field('Новый пароль — минимум 12 символов',input('password','',{type:'password',required:true,minlength:12,maxlength:256,autocomplete:'new-password'}))+field('Повторите новый пароль',input('confirmPassword','',{type:'password',required:true,autocomplete:'new-password'}))+formEnd('Сохранить пароль'))+btn('Выйти','logout')));return;}
     if(!actorId){$('#app').innerHTML=login();return;}
     const u=actor(),focus=document.activeElement?.id,position=document.activeElement?.selectionStart;
     if(!rolePages[u.role].includes(ui.page))ui.page='dashboard';
     const icons={dashboard:'overview',crm:'crm',calendar:'calendar',cases:'cases',payments:'payments',employees:'employees',analytics:'analytics'};
     const nav=rolePages[u.role].map(p=>btn(icon(icons[p])+e(names[p])+(p==='crm'&&visibleLeads().filter(l=>l.stage==='Новые лиды').length?H('span',{class:'nav-count'},visibleLeads().filter(l=>l.stage==='Новые лиды').length):''),'nav',{class:ui.page===p?'active':'','data-page':p})).join('');
     const side=H('aside',{class:'sidebar'},brand()+div('nav-label','РАБОЧЕЕ ПРОСТРАНСТВО')+H('nav',{class:'nav','aria-label':'Разделы CRM'},nav)+div('sidebar-note',H('b',{},'Всё начинается с доверия.')+'Клиенты, дела и команда<br>в одном рабочем пространстве.')+div('profile',avatar(u.name,'gold')+div('',H('b',{},e(u.name))+H('small',{},M.ROLES[u.role]))+btn(icon('logout'),'logout',{class:'icon-btn logout','aria-label':SERVER?'Выйти':'Выйти из демонстрации'})));
-    const top=H('header',{class:'topbar'},div('breadcrumb','BDA Lawyer <span>/</span> <b>'+names[ui.page]+'</b>')+div('top-actions',H('span',{class:'demo-pill'},SERVER?'Общая база':'Демонстрационный прототип')+(SERVER?btn('Обновить данные','refresh',{class:'btn small'}):div('role-picker',H('label',{for:'role-select'},'Просмотр от лица')+select('actor',db.users.map(x=>({value:x.id,label:M.ROLES[x.role]+(x.role==='lawyer'?' · '+x.name.split(' ')[0]:'')})),u.id,{id:'role-select','aria-label':'Демонстрационная роль'})))+btn(icon('bell'),'notifications',{class:'icon-btn','aria-label':'Задачи и уведомления'})+avatar(u.name)));
+    const top=H('header',{class:'topbar'},div('breadcrumb','BDA Lawyer <span>/</span> <b>'+names[ui.page]+'</b>')+div('top-actions',H('span',{class:'demo-pill'},SERVER?'Общая база':'Демонстрационный прототип')+(SERVER?btn('Обновить данные','refresh',{class:'btn small'}):div('role-picker',H('label',{for:'role-select'},'Просмотр от лица')+select('actor',db.users.map(x=>({value:x.id,label:M.ROLES[x.role]+(x.role==='lawyer'?' · '+x.name.split(' ')[0]:'')})),u.id,{id:'role-select','aria-label':'Демонстрационная роль'})))+btn(icon('bell'),'notifications',{class:'icon-btn','aria-label':'Задачи и уведомления'})+avatar(u.name)+btn(icon('logout'),'logout',{class:'icon-btn topbar-logout','aria-label':SERVER?'Выйти':'Выйти из демонстрации',title:'Выйти'})));
     const pages={dashboard:dashboard,crm:crm,calendar:calendarPage,cases:casesPage,payments:paymentsPage,employees:employeesPage,analytics:analytics};
     const footer=div('page-footer',H('span',{},'BDA Lawyer · Внутренняя система компании')+H('span',{},SERVER?'Данные сохраняются на сервере': 'Демо-данные хранятся в этом браузере'));
     $('#app').innerHTML=div('shell',side+H('main',{class:'workspace'},top+(!storageOK?div('storage-warning','Хранилище недоступно или содержит несовместимые данные. Изменения доступны только до перезагрузки. Используйте локальный сервер из README.'): '')+div('content',pages[ui.page]()+footer)));
@@ -201,9 +202,21 @@
       ['Просрочено',money(all.filter(i=>M.invoiceStatus(db,i)==='Просрочено').reduce((s,i)=>s+M.balance(db,i),0)),'Неоплаченный остаток после срока','bell']
     ])+searchBar(select('payment-status',[{value:'',label:'Все статусы'},'Ожидается','Частично','Оплачено','Просрочено'],ui.paymentStatus,{id:'payment-filter','aria-label':'Статус платежа'}))+div('panel',invoicesTable(rows))+H('p',{class:'caption'},'В прототипе фиксируются поступления в целых тенге. Банковская операция не выполняется; подтверждающие документы появятся в серверной версии.');
   }
-  function employeesPage(){
-    return pageHead('Сотрудники','Команда BDA Lawyer и текущая загрузка.')+div('notice',SERVER?'Учётные записи создаёт администратор. Роль определяет доступ к записям и действиям.':'Демонстрационные сотрудники. Роль определяет доступ к разделам и записям; реальные приглашения появятся после подключения авторизации.')+div('employees',db.users.map(u=>{const cs=db.cases.filter(c=>(c.lawyerId===u.id||c.coordinatorId===u.id)&&c.stage!=='Завершено'),ts=db.tasks.filter(t=>t.assigneeId===u.id&&!t.done);return div('employee',avatar(u.name)+H('h2',{},e(u.name))+badge(M.ROLES[u.role],'s'+({ceo:2,sales:1,coordinator:4,lawyer:3}[u.role]))+H('p',{},e(u.specialty))+div('employee-meta',H('span',{},H('b',{},cs.length)+'активных дел')+H('span',{},H('b',{},ts.length)+'открытых задач')));}).join(''));
+  function employeeModal(id){
+    const u=db.users.find(x=>x.id===id);
+    showModal(u?'Изменить сотрудника':'Добавить сотрудника',H('form',{'data-form':'employee-save','data-id':id||''},div('form-grid',
+      field('Имя',input('name',u?.name||'',{required:true,minlength:2,maxlength:120}))+field('Логин (почта не обязательна)',input('login',u?.login||'',{required:true,minlength:3,maxlength:254,autocomplete:'off'}))+
+      field('Роль',select('role',Object.entries(M.ROLES).map(([value,label])=>({value,label})),u?.role||'sales'))+
+      field('Специализация',input('specialty',u?.specialty||'',{maxlength:200}))+
+      field('Доступ',select('active',[{value:'true',label:'Включён'},{value:'false',label:'Отключён'}],u?.active===false?'false':'true')))+formEnd('Сохранить')));
   }
+  function showCredential(value){
+    showModal('Доступ создан',div('notice','Передайте временный пароль сотруднику лично. После закрытия окна он больше не показывается. При первом входе сотрудник задаст собственный пароль.')+field('Временный пароль',input('credential',value,{readonly:true,autocomplete:'off'})));
+  }
+  function employeesPage(){
+    return pageHead('Сотрудники','Команда BDA Lawyer и доступ к CRM.',SERVER?btn('Добавить сотрудника','employee-new',{class:'btn primary'}):'')+div('employees',db.users.map(u=>div('employee',avatar(u.name)+H('h2',{},e(u.name))+badge(M.ROLES[u.role])+H('p',{},e(u.specialty))+div('employee-meta',H('span',{},H('b',{},db.cases.filter(c=>c.stage!=='Завершено'&&(c.lawyerId===u.id||c.coordinatorId===u.id)).length)+'активных дел')+H('span',{},H('b',{},db.tasks.filter(t=>!t.done&&t.assigneeId===u.id).length)+'открытых задач'))+(SERVER?H('p',{},e(u.login||'Доступ ещё не создан')+' · '+(u.active?'Включён':'Отключён'))+btn('Изменить','employee-edit',{'data-id':u.id})+(u.hasAccount&&u.id!==actorId?btn('Сбросить пароль','employee-reset',{'data-id':u.id}):u.id===actorId?btn('Сменить пароль','change-password'):''):''))).join(''));
+  }
+
   function analytics(){
     const ls=db.leads,won=ls.filter(l=>l.stage==='Успешно').length,refused=ls.filter(l=>l.stage==='Отказано');
     const sourceRows=M.SOURCES.map(s=>({name:s,count:ls.filter(l=>l.source===s).length}));
@@ -211,7 +224,7 @@
     return pageHead('Аналитика','Продажи, результаты и деньги — на основе записей CRM.')+div('notice','За всё время · Конверсия = успешные лиды / все лиды. Поступления = сумма зарегистрированных оплат. Стоимость сделок и взысканные в пользу клиента суммы не считаются поступлениями компании.')+stats([
       ['Все лиды',ls.length,'Все источники и направления','crm'],['Конверсия',Math.round(won/Math.max(1,ls.length)*100)+'%',won+' успешных из '+ls.length,'analytics'],
       ['Открыто дел',db.cases.length,'Созданы после приёма передачи','cases'],['Поступления',money(db.receipts.reduce((s,r)=>s+r.amount,0)),'Фактически учтённые суммы','payments']
-    ])+div('two-col',panel('Воронка продаж','Распределение по текущим этапам',div('panel-pad',funnel(ls)))+panel('Источники обращений','Количество лидов из каждого канала',div('panel-pad',chart(sourceRows)))+panel('Причины отказов',refused.length+' отказов за всё время',div('panel-pad',refused.length?chart(M.REASONS.map(r=>({name:r,count:refused.filter(l=>l.reason===r).length})).filter(r=>r.count)):empty('Отказов нет')))+panel('Загрузка юристов','Активные закреплённые дела',div('panel-pad',chart(db.users.filter(u=>u.role==='lawyer').map(u=>({name:u.name,count:db.cases.filter(c=>c.lawyerId===u.id&&c.stage!=='Завершено').length}))))));
+    ])+div('two-col',panel('Воронка продаж','Распределение по текущим этапам',div('panel-pad',funnel(ls)))+panel('Источники обращений','Количество лидов из каждого канала',div('panel-pad',chart(sourceRows)))+panel('Причины отказов',refused.length+' отказов за всё время',div('panel-pad',refused.length?chart(M.REASONS.map(r=>({name:r,count:refused.filter(l=>l.reason===r).length})).filter(r=>r.count)):empty('Отказов нет')))+panel('Загрузка юристов','Активные закреплённые дела',div('panel-pad',chart(db.users.filter(u=>u.role==='lawyer'&&u.active!==false).map(u=>({name:u.name,count:db.cases.filter(c=>c.lawyerId===u.id&&c.stage!=='Завершено').length}))))));
   }
   const eventKinds={task:'Задача',meeting:'Встреча',court:'Суд'};
   function calendarFiltered(){
@@ -298,7 +311,7 @@
     if(type==='case'){const c=visibleCases().find(c=>c.id===id);if(c)ids=M.manageCase(db,actor(),c)?[c.coordinatorId,c.lawyerId]:[actorId];}
     else if(type==='lead'){const l=visibleLeads().find(l=>l.id===id);if(l)ids=[l.ownerId];}
     else if(actor().role==='ceo')ids=db.users.map(u=>u.id);
-    return db.users.filter(u=>ids.includes(u.id)).map(u=>({value:u.id,label:u.name}));
+    return db.users.filter(u=>ids.includes(u.id)&&u.active!==false).map(u=>({value:u.id,label:u.name}));
   }
   function eventModal(eventId){
     const ev=eventId&&db.events.find(ev=>ev.id===eventId);
@@ -379,7 +392,7 @@
       if(!l.caseId&&u.role==='sales'&&M.editLead(u,l)&&l.stage!=='Отказано'){
         body+=section('Передать квалифицированный лид')+H('form',{'data-form':'handoff-lead','data-id':l.id},
           field('Результат квалификации',area('qualification','',{required:true}),true)+
-          field('Координатор',select('coordinatorId',db.users.filter(x=>x.role==='coordinator').map(x=>({value:x.id,label:x.name})),l.coordinatorId,{required:true}),true)+formEnd('Квалифицирован · передать координатору'));
+          field('Координатор',select('coordinatorId',db.users.filter(x=>x.role==='coordinator'&&x.active!==false).map(x=>({value:x.id,label:x.name})),l.coordinatorId,{required:true}),true)+formEnd('Квалифицирован · передать координатору'));
       }
       if(l.qualification)body+=section('Квалификация')+kv(emp(l.qualification.by),e(l.qualification.note));
       if(!l.caseId&&l.coordinatorId){
@@ -407,7 +420,7 @@
         const items=canManage?M.CASE_STAGES:M.CASE_STAGES.filter(s=>s!=='Завершено');
         if(c.stage==='Завершено'&&!canManage)body+=div('notice','Дело завершено. '+e(c.result));
         else body+=H('form',{'data-form':'edit-case','data-id':c.id},div('form-grid',
-          field('Этап дела',select('stage',items,c.stage,{required:true}),true)+(canManage?field('Юрист',select('lawyerId',db.users.filter(x=>x.role==='lawyer').map(x=>({value:x.id,label:x.name})),c.lawyerId,{required:true}))+field('Плановый срок',input('due',c.due,{type:'date',required:true}))+field('Результат / комментарий к завершению',area('result',c.result),true):'')
+          field('Этап дела',select('stage',items,c.stage,{required:true}),true)+(canManage?field('Юрист',select('lawyerId',db.users.filter(x=>x.role==='lawyer'&&x.active!==false).map(x=>({value:x.id,label:x.name})),c.lawyerId,{required:true}))+field('Плановый срок',input('due',c.due,{type:'date',required:true}))+field('Результат / комментарий к завершению',area('result',c.result),true):'')
         )+(canManage?div('caption','При смене юриста его открытые задачи и запланированные события по этому делу перейдут новому исполнителю.'): '')+formEnd('Обновить дело'));
       }else if(ui.detailTab==='tasks'){
         const tasks=db.tasks.filter(t=>t.caseId===c.id);
@@ -444,7 +457,7 @@
       field('Телефон',input('phone','',{required:true,type:'tel',maxlength:24,placeholder:'+7 000 000 00 00'}))+field('Источник',select('source',M.SOURCES,'Вручную'))+
       field('Услуга',select('service',M.SERVICES,M.SERVICES[0]),true)+
       field('Кратко о запросе',area('note','',{required:true}),true)+
-      field('Менеджер',select('ownerId',db.users.filter(u=>u.role==='sales').map(u=>({value:u.id,label:u.name})),'u2'))+
+      field('Менеджер',select('ownerId',db.users.filter(u=>u.role==='sales'&&u.active!==false).map(u=>({value:u.id,label:u.name})),'u2'))+
       field('Следующий шаг',input('nextStep','Связаться и квалифицировать запрос',{required:true,maxlength:160}),true)+
       field('Дата контакта',input('nextDate',M.date(),{type:'date',required:true}),true)
     )+formEnd('Создать лид')));
@@ -455,7 +468,7 @@
     const match=db.clients.find(c=>M.phoneKey(c.phone)===M.phoneKey(l.phone));
     showModal('Принять передачу',div('notice',H('b',{},e(l.name))+'<br>'+e(l.service)+' · '+money(l.amount)+'<br>'+(match?'Найден клиент: '+e(match.name)+'. Новое дело будет связано с ним.':'Контакт новый — при приёме будет создана карточка клиента.'))+
       H('form',{'data-form':'accept-lead','data-id':l.id},input('revision',l.pricing.revision,{type:'hidden'})+div('form-grid',
-        field('Юрист',select('lawyerId',db.users.filter(u=>u.role==='lawyer').map(u=>({value:u.id,label:u.name})),'u4',{required:true}),true)+
+        field('Юрист',select('lawyerId',db.users.filter(u=>u.role==='lawyer'&&u.active!==false).map(u=>({value:u.id,label:u.name})),'u4',{required:true}),true)+
         kv('Координатор',e(emp(l.coordinatorId)))+
         field('Плановый срок дела',input('due',M.date(14),{type:'date',required:true}),true)
       )+formEnd('Принять и создать дело')));
@@ -482,10 +495,10 @@
     const value=await response.json();
     if(!response.ok){const err=new Error(value.error||'Не удалось выполнить запрос');err.status=response.status;throw err;}return value;
   }
-  function applySnapshot(value){db=value.db;actorId=value.actorId;revision=value.revision;}
+  function applySnapshot(value){passwordChangeRequired=!!value.passwordChangeRequired;if(passwordChangeRequired){actorId='';return;}db=value.db;actorId=value.actorId;revision=value.revision;}
   async function refresh(){
     try{applySnapshot(await api('state'));loginError='';render();if(ui.detail)renderDetail();}
-    catch(err){if(err.status===401){actorId='';closeDetails();$('#modal').close();loginError='';render();}else if(!actorId){loginError=err.message;render();}else toast(err.message);}
+    catch(err){if(err.status===401){passwordChangeRequired=false;actorId='';closeDetails();$('#modal').close();loginError='';render();}else if(!actorId){loginError=err.message;render();}else toast(err.message);}
   }
   async function serverAction(action,id,data={}){
     if(busy)throw new Error('Дождитесь завершения предыдущего действия');
@@ -494,7 +507,7 @@
       const value=await api('command',{action,id,data,revision,requestId:crypto.randomUUID()});
       applySnapshot(value);return value.result;
     }catch(err){
-      if(err.status===401){actorId='';closeDetails();$('#modal').close();render();}
+      if(err.status===401){passwordChangeRequired=false;actorId='';closeDetails();$('#modal').close();render();}
       // Preserve the form on conflict so the user can copy changes before refreshing.
       throw err;
     }finally{busy=false;}
@@ -506,7 +519,16 @@
       if(form.dataset.form==='server-login'){
         busy=true;await api('login',data);busy=false;await refresh();return;
       }
+      if(form.dataset.form==='change-password'){
+        if(data.password!==data.confirmPassword)throw new Error('Пароли не совпадают');
+        busy=true;await api('password',data);passwordChangeRequired=false;actorId='';loginError='Пароль изменён. Войдите с новым паролем.';render();return;
+      }
+      if(form.dataset.form==='employee-save'){
+        busy=true;const result=await api('employees',{action:id?'update':'create',id,revision,data:{...data,active:data.active==='true'}});
+        $('#modal').close();await refresh();if(result.temporaryPassword)showCredential(result.temporaryPassword);else toast('Сотрудник сохранён');return;
+      }
       const result=await serverAction(form.dataset.form,id,data);
+      if(ui.page==='employees')await refresh();
       $('#modal').close();
       if(form.dataset.form==='new-lead'){navigate('crm');ui.detail={type:'lead',id:result.id};}
       if(form.dataset.form==='accept-lead'){navigate('cases');ui.detail={type:'case',id:result.id};ui.detailTab='overview';}
@@ -526,8 +548,16 @@
     const a=b.dataset.action,id=b.dataset.id;
     try {
       if(SERVER){
+        if(a==='nav'&&b.dataset.page==='employees'){await refresh();navigate('employees');return;}
+        if(a==='change-password'){passwordChangeRequired=true;render();return;}
+        if(a==='employee-new'){employeeModal();return;}
+        if(a==='employee-edit'){employeeModal(id);return;}
+        if(a==='employee-reset'){
+          if(busy||!confirm('Выдать новый временный пароль и завершить сеансы сотрудника?'))return;
+          busy=true;try{const result=await api('employees',{action:'reset',id,revision});await refresh();showCredential(result.temporaryPassword);}finally{busy=false;}return;
+        }
         if(a==='refresh'){if(!busy)await refresh();return;}
-        if(a==='logout'){if(busy)return;await api('logout',{});actorId='';closeDetails();$('#modal').close();render();return;}
+        if(a==='logout'){if(busy)return;await api('logout',{});passwordChangeRequired=false;actorId='';closeDetails();$('#modal').close();render();return;}
         if(a==='login')return;
         if(['toggle-task','calendar-task','document','event-status'].includes(a)){
           if(busy)return;
@@ -538,7 +568,7 @@
       if(a==='login'){changeActor(id);return;}
       if(a==='logout'){changeActor('');return;}
       if(a==='close-detail'){closeDetails();return;}
-      if(a==='close-modal'){$('#modal').close();return;}
+      if(a==='close-modal'){$('#modal').close();$('#modal').innerHTML='';return;}
       if(!actorId)return;
       if(a==='cal-view'){cal.view=b.dataset.view;cal.date=cal.selected;render();return;}
       if(a==='cal-shift'){cal.date=M.calendar.move(cal.date,cal.view,Number(b.dataset.direction));cal.selected=cal.date;render();return;}
@@ -628,6 +658,7 @@
       if(result&&ui.detail&&!$('#detail').open)$('#detail').showModal();
     }catch(err){const box=form.querySelector('.form-error');if(box){box.textContent=err.message;box.setAttribute('role','alert');}else toast(err.message);}
   });
+  $('#modal').addEventListener('close',()=>{if(!$('#modal').open)$('#modal').innerHTML='';});
   $('#detail').addEventListener('cancel',()=>{ui.detail=null;});
   for(const id of ['detail','modal'])$('#'+id).addEventListener('click',event=>{if(event.target!==event.currentTarget)return;const r=event.currentTarget.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom){event.currentTarget.close();if(id==='detail')ui.detail=null;}});
   if(SERVER)refresh();else render();
