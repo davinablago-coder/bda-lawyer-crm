@@ -214,7 +214,8 @@
     showModal('Доступ создан',div('notice','Передайте временный пароль сотруднику лично. После закрытия окна он больше не показывается. При первом входе сотрудник задаст собственный пароль.')+field('Временный пароль',input('credential',value,{readonly:true,autocomplete:'off'})));
   }
   function employeesPage(){
-    return pageHead('Сотрудники','Команда BDA Lawyer и доступ к CRM.',SERVER?btn('Добавить сотрудника','employee-new',{class:'btn primary'}):'')+div('employees',db.users.map(u=>div('employee',avatar(u.name)+H('h2',{},e(u.name))+badge(M.ROLES[u.role])+H('p',{},e(u.specialty))+div('employee-meta',H('span',{},H('b',{},db.cases.filter(c=>c.stage!=='Завершено'&&(c.lawyerId===u.id||c.coordinatorId===u.id)).length)+'активных дел')+H('span',{},H('b',{},db.tasks.filter(t=>!t.done&&t.assigneeId===u.id).length)+'открытых задач'))+(SERVER?H('p',{},e(u.login||'Доступ ещё не создан')+' · '+(u.active?'Включён':'Отключён'))+btn('Изменить','employee-edit',{'data-id':u.id})+(u.hasAccount&&u.id!==actorId?btn('Сбросить пароль','employee-reset',{'data-id':u.id}):u.id===actorId?btn('Сменить пароль','change-password'):''):''))).join(''));
+    const routing=SERVER?panel('Заявки с сайта','Выберите менеджера для новых заявок Tilda. Ранее назначенные заявки сохраняют ответственного.',div('panel-pad',H('form',{'data-form':'route-tilda'},field('Ответственный менеджер',select('ownerId',[{value:'',label:'Выберите менеджера'},...db.users.filter(u=>u.role==='sales'&&u.active&&u.hasAccount).map(u=>({value:u.id,label:u.name}))],db.settings?.tildaOwnerId||'',{required:true}))+formEnd('Сохранить получателя')))):'';
+    return pageHead('Сотрудники','Команда BDA Lawyer и доступ к CRM.',SERVER?btn('Добавить сотрудника','employee-new',{class:'btn primary'}):'')+routing+div('employees',db.users.map(u=>div('employee',avatar(u.name)+H('h2',{},e(u.name))+badge(M.ROLES[u.role])+H('p',{},e(u.specialty))+div('employee-meta',H('span',{},H('b',{},db.cases.filter(c=>c.stage!=='Завершено'&&(c.lawyerId===u.id||c.coordinatorId===u.id)).length)+'активных дел')+H('span',{},H('b',{},db.tasks.filter(t=>!t.done&&t.assigneeId===u.id).length)+'открытых задач'))+(SERVER?H('p',{},e(u.login||'Доступ ещё не создан')+' · '+(u.active?'Включён':'Отключён'))+btn('Изменить','employee-edit',{'data-id':u.id})+(u.hasAccount&&u.id!==actorId?btn('Сбросить пароль','employee-reset',{'data-id':u.id}):u.id===actorId?btn('Сменить пароль','change-password'):''):''))).join(''));
   }
 
   function analytics(){
@@ -457,7 +458,7 @@
       field('Телефон',input('phone','',{required:true,type:'tel',maxlength:24,placeholder:'+7 000 000 00 00'}))+field('Источник',select('source',M.SOURCES,'Вручную'))+
       field('Услуга',select('service',M.SERVICES,M.SERVICES[0]),true)+
       field('Кратко о запросе',area('note','',{required:true}),true)+
-      field('Менеджер',select('ownerId',db.users.filter(u=>u.role==='sales'&&u.active!==false).map(u=>({value:u.id,label:u.name})),'u2'))+
+      field('Менеджер',select('ownerId',db.users.filter(u=>u.role==='sales'&&u.active!==false).map(u=>({value:u.id,label:u.name})),db.settings?.tildaOwnerId||'u2'))+
       field('Следующий шаг',input('nextStep','Связаться и квалифицировать запрос',{required:true,maxlength:160}),true)+
       field('Дата контакта',input('nextDate',M.date(),{type:'date',required:true}),true)
     )+formEnd('Создать лид')));
@@ -522,6 +523,9 @@
       if(form.dataset.form==='change-password'){
         if(data.password!==data.confirmPassword)throw new Error('Пароли не совпадают');
         busy=true;await api('password',data);passwordChangeRequired=false;actorId='';loginError='Пароль изменён. Войдите с новым паролем.';render();return;
+      }
+      if(form.dataset.form==='route-tilda'){
+        busy=true;await api('employees',{action:'route-tilda',id:data.ownerId,revision});await refresh();toast('Получатель заявок с сайта сохранён');return;
       }
       if(form.dataset.form==='employee-save'){
         busy=true;const result=await api('employees',{action:id?'update':'create',id,revision,data:{...data,active:data.active==='true'}});

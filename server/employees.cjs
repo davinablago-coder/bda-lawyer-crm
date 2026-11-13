@@ -10,12 +10,22 @@ function validate(data){
 }
 function guardChange(db,actorId,target,next){
   if(target.id===actorId&&(!next.active||next.role!==target.role))throw fail('Нельзя отключить себя или изменить собственную роль');
-  if(target.id===process.env.TILDA_OWNER_ID&&(!next.active||next.role!=='sales'))throw fail('Сначала переназначьте получателя заявок Tilda');
+  if(target.id===(db.settings?.tildaOwnerId||process.env.TILDA_OWNER_ID)&&(!next.active||next.role!=='sales'))throw fail('Сначала переназначьте получателя заявок Tilda');
   const assigned=db.leads.some(l=>![ 'Успешно','Отказано'].includes(l.stage)&&(l.ownerId===target.id||l.coordinatorId===target.id))||db.cases.some(c=>c.stage!=='Завершено'&&(c.lawyerId===target.id||c.coordinatorId===target.id))||db.tasks.some(t=>!t.done&&t.assigneeId===target.id)||db.events.some(e=>e.status==='planned'&&e.ownerId===target.id);
   if(assigned&&(!next.active||next.role!==target.role))throw fail('Сначала передайте активные лиды, дела, задачи и события другому сотруднику');
 }
 async function manage(c,db,actor,account,input){
   if(actor.role!=='ceo')throw fail('Управление сотрудниками доступно только CEO',403);
+  if(input.action==='route-tilda'){
+    const target=db.users.find(u=>u.id===input.id&&u.role==='sales'&&u.active!==false);
+    if(!target)throw fail('Выберите действующего менеджера по продажам');
+    const accounts=await c.query('SELECT id FROM accounts WHERE employee_id=$1 AND active=true',[target.id]);
+    if(!accounts.rows.length)throw fail('У менеджера нет активного доступа');
+    const previous=db.settings?.tildaOwnerId||process.env.TILDA_OWNER_ID||'';
+    db.settings={...db.settings,tildaOwnerId:target.id};
+    await c.query('INSERT INTO account_audit(actor_id,employee_id,action) VALUES($1,$2,$3)',[account.id,target.id,'tilda-owner:'+previous+'->'+target.id]);
+    return {id:target.id};
+  }
   if(!['create','update','reset'].includes(input.action))throw fail('Неизвестное действие');
   let target=input.action==='create'?null:db.users.find(u=>u.id===input.id),credential;
   if(input.action!=='create'&&!target)throw fail('Сотрудник не найден',404);

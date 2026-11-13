@@ -8,3 +8,13 @@ test('собственное отключение и смена роли с от
 test('управление доступами закрыто для остальных ролей',async()=>{for(const role of ['sales','coordinator','lawyer'])await assert.rejects(manage({},M.seed(),{role},{},{action:'create'}),{status:403});});
 test('создание выдаёт случайный пароль, сохраняет только хеш и отзывает сессии',async()=>{const calls=[];const c={query:async(sql,args)=>{calls.push([sql,args]);return {rows:[]};}};const db=M.seed();const result=await manage(c,db,db.users[0],{id:'actor'},{action:'create',data:{name:'Новый юрист',login:'lawyer.new',role:'lawyer',active:true}});const insert=calls.find(([s])=>s.startsWith('INSERT INTO accounts'));assert.ok(await verifyPassword(result.temporaryPassword,insert[1][3]));assert.notEqual(insert[1][3],result.temporaryPassword);assert.ok(calls.some(([s])=>s.startsWith('DELETE FROM sessions')));assert.ok(!JSON.stringify(db).includes(result.temporaryPassword));});
 test('очистка заглушек сохраняет новую заявку, идемпотентна',()=>{const db=M.seed();db.leads.push({id:'real',name:'Синтетическая новая заявка',source:'Сайт'});clean(db);assert.deepEqual(db.leads.map(l=>l.id),['real']);assert.equal(db.cases.length,0);assert.equal(db.users.length,5);assert.ok(Object.values(clean(db)).every(n=>n===0));});
+test('CEO chooses active site recipient; disabled accounts and other roles cannot',async()=>{
+ const db=M.seed(),calls=[];
+ const c={query:async(sql,args)=>{calls.push([sql,args]);return {rows:sql.startsWith('SELECT')?[{id:'account'}]:[]};}};
+ await manage(c,db,db.users[0],{id:'ceo-account'},{action:'route-tilda',id:'u2'});
+ assert.equal(db.settings.tildaOwnerId,'u2');
+ assert.throws(()=>guardChange(db,'u1',db.users[1],{active:false,role:'sales'}),/Tilda/);
+ await assert.rejects(manage(c,db,db.users[1],{id:'sales-account'},{action:'route-tilda',id:'u2'}),{status:403});
+ await assert.rejects(manage(c,db,db.users[0],{id:'ceo-account'},{action:'route-tilda',id:'u4'}));
+ await assert.rejects(manage({query:async()=>({rows:[]})},db,db.users[0],{id:'ceo-account'},{action:'route-tilda',id:'u2'}));
+});

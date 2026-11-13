@@ -66,3 +66,17 @@ test('A delivery and its retry create one lead, preserving workflow and an integ
   assert.equal(state.leads[0].pricing.status,'sales');assert.equal(state.leads[0].caseId,null);
   assert.equal(state.activity[0].actorId,'integration:tilda');
 });
+
+test('CEO routing overrides legacy env owner; new manager sees lead, old manager does not',async()=>{
+  let state=M.seed();state.users.push({id:'new-sales',name:'Новый менеджер',role:'sales',active:true});state.settings={tildaOwnerId:'new-sales'};
+  const run=async fn=>fn({query:async(sql,args)=>{
+    if(sql.startsWith('SELECT data'))return {rows:[{data:structuredClone(state)}]};
+    if(sql.startsWith('SELECT id FROM accounts')){assert.equal(args[0],'new-sales');return {rows:[{id:'active-account'}]};}
+    if(sql.startsWith('UPDATE crm_workspace'))state=JSON.parse(args[0]);
+    return {rows:[]};
+  }});
+  await save(submission(payload,config,''),config,run);
+  assert.equal(state.leads[0].ownerId,'new-sales');
+  assert.ok(M.leadList(state,M.user(state,'new-sales')).some(l=>l.id===state.leads[0].id));
+  assert.ok(!M.leadList(state,M.user(state,'u2')).some(l=>l.id===state.leads[0].id));
+});
